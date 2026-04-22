@@ -12,6 +12,7 @@
 WebServer
  ├── HttpServer httpServer           // JDK com.sun.net.httpserver.HttpServer
  ├── StreamConfig config
+ ├── JobGraph jobGraph
  ├── StatusHandler statusHandler
  └── boolean available               // 端口绑定是否成功
 ```
@@ -24,17 +25,19 @@ WebServer
 public class WebServer {
 
     public WebServer(StreamConfig config,
+                     JobGraph jobGraph,
                      JobExecutor jobExecutor,
                      MetricsRegistry metricsRegistry,
                      CheckpointCoordinator checkpointCoordinator);
 
     /**
      * 启动 Web 服务：
-     * 1. 创建 StatusHandler，注入 jobExecutor/metricsRegistry/checkpointCoordinator 引用
+     * 1. 创建 StatusHandler，注入 jobGraph/jobExecutor/metricsRegistry/checkpointCoordinator 引用
      * 2. 绑定端口 config.webConfig.port，创建 HttpServer
      * 3. 注册路由：
-     *    - GET /          → statusHandler（HTML）
+     *    - GET /           → statusHandler（HTML）
      *    - GET /api/status → statusHandler（JSON）
+     *    - GET /api/dag    → statusHandler（DAG JSON）
      *    - GET /api/logs   → statusHandler（日志文本）
      * 4. 启动 HttpServer（后台线程，不阻塞主流程）
      * 端口占用时捕获 BindException，打印 warn 日志，available=false，不抛异常。
@@ -53,13 +56,14 @@ public class WebServer {
 
 ```
 WebServer.start():
-  statusHandler = new StatusHandler(jobExecutor, metricsRegistry,
+  statusHandler = new StatusHandler(jobGraph, jobExecutor, metricsRegistry,
                                     checkpointCoordinator, config)
   try:
     httpServer = HttpServer.create(
         new InetSocketAddress(config.webConfig.port), 0)
-    httpServer.createContext("/",          statusHandler)
+    httpServer.createContext("/",           statusHandler)
     httpServer.createContext("/api/status", statusHandler)
+    httpServer.createContext("/api/dag",    statusHandler)
     httpServer.createContext("/api/logs",   statusHandler)
     httpServer.setExecutor(null)            // 使用默认线程池
     httpServer.start()
@@ -81,4 +85,4 @@ WebServer.stop():
 - 依赖 runtime 子域：`JobExecutor`（只读引用）
 - 依赖 metrics 子域：`MetricsRegistry`（只读引用）
 - 依赖 checkpoint 子域：`CheckpointCoordinator`（只读引用）
-- 依赖 L2 定义：`StreamConfig`、`WebConfig`
+- 依赖 L2 定义：`StreamConfig`、`WebConfig`、`JobGraph`

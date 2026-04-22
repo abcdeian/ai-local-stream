@@ -7,6 +7,7 @@ import com.localstream.common.KeyByConfig;
 import com.localstream.common.KeySelector;
 import com.localstream.common.OperatorNode;
 import com.localstream.common.OperatorType;
+import com.localstream.metrics.MetricsRegistry;
 import com.localstream.util.Logger;
 
 import java.util.Collections;
@@ -26,6 +27,7 @@ public class ProcessorTask implements Runnable {
     private final OperatorNode node;
     private final List<DataQueue> upstreamQueues;
     private final List<DataQueue> downstreamQueues;
+    private final MetricsRegistry metricsRegistry;
     private volatile CheckpointAckListener ackListener = null;
     /** UNION 专用：已收到 Barrier 的上游队列 → checkpointId */
     private final Map<DataQueue, Long> barrierAlignState = new HashMap<>();
@@ -33,10 +35,12 @@ public class ProcessorTask implements Runnable {
 
     public ProcessorTask(OperatorNode node,
                          List<DataQueue> upstreamQueues,
-                         List<DataQueue> downstreamQueues) {
+                         List<DataQueue> downstreamQueues,
+                         MetricsRegistry metricsRegistry) {
         this.node = node;
         this.upstreamQueues = upstreamQueues;
         this.downstreamQueues = downstreamQueues;
+        this.metricsRegistry = metricsRegistry;
     }
 
     @Override
@@ -86,11 +90,15 @@ public class ProcessorTask implements Runnable {
             handleBarrier((CheckpointBarrier) record);
             return;
         }
+        metricsRegistry.incrementInput(node.nodeId);
         FlatMapFunction<Object, Object> fn = (FlatMapFunction<Object, Object>) node.function;
         List<Object> results = fn.flatMap(record);
         if (results != null) {
             for (Object r : results) {
-                for (DataQueue q : downstreamQueues) q.put(r);
+                for (DataQueue q : downstreamQueues) {
+                    q.put(r);
+                    metricsRegistry.incrementOutput(node.nodeId);
+                }
             }
         }
     }
@@ -102,6 +110,7 @@ public class ProcessorTask implements Runnable {
             handleBarrier((CheckpointBarrier) record);
             return;
         }
+        metricsRegistry.incrementInput(node.nodeId);
         KeyByConfig config = (KeyByConfig) node.function;
         KeySelector<Object, Object> keySelector = (KeySelector<Object, Object>) config.keySelector;
         Object key = keySelector.getKey(record);
@@ -109,16 +118,19 @@ public class ProcessorTask implements Runnable {
         List results = ((com.localstream.common.AggregateFunction) config.aggregateFunction).add(key, record);
         if (results != null) {
             for (Object r : results) {
-                for (DataQueue q : downstreamQueues) q.put(r);
+                for (DataQueue q : downstreamQueues) {
+                    q.put(r);
+                    metricsRegistry.incrementOutput(node.nodeId);
+                }
             }
         }
     }
 
     private void processUnion() throws InterruptedException {
         for (DataQueue queue : upstreamQueues) {
-            if (barrierAlignState.containsKey(queue)) continue; // 该队列已对齐，暂停消费
+            if (barrierAlignState.containsKey(queue)) continue;
 
-            Object record = queue.poll(1); // 非阻塞 poll（1ms 超时）
+            Object record = queue.poll(1);
             if (record == null) continue;
 
             if (record instanceof CheckpointBarrier) {
@@ -126,19 +138,22 @@ public class ProcessorTask implements Runnable {
                 barrierAlignState.put(queue, barrier.getCheckpointId());
 
                 if (barrierAlignState.size() == upstreamQueues.size()) {
-                    // 所有上游 Barrier 已对齐
                     long checkpointId = barrier.getCheckpointId();
                     if (ackListener != null) {
                         ackListener.onBarrierProcessed(checkpointId, node.nodeId,
-                                Collections.emptyMap()); // UNION 无状态
+                                Collections.emptyMap());
                     }
                     for (DataQueue q : downstreamQueues) {
                         q.put(new CheckpointBarrier(checkpointId));
                     }
-                    barrierAlignState.clear(); // 对齐完成，恢复所有队列消费
+                    barrierAlignState.clear();
                 }
             } else {
-                for (DataQueue q : downstreamQueues) q.put(record);
+                metricsRegistry.incrementInput(node.nodeId);
+                for (DataQueue q : downstreamQueues) {
+                    q.put(record);
+                    metricsRegistry.incrementOutput(node.nodeId);
+                }
             }
         }
     }

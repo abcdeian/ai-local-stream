@@ -7,7 +7,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 /**
  * 接收 api 子域逐步注册的 OperatorNode，维护完整的节点集合与上下游边关系，
@@ -25,11 +24,13 @@ public class DagBuilder {
      * 生成全局唯一 nodeId（UUID 短串）和可读名称（如 "source-1"、"keyby-2"）。
      */
     public void addNode(OperatorNode node) {
-        node.nodeId = UUID.randomUUID().toString().replace("-", "").substring(0, 8);
         String typeName = node.type.name().toLowerCase();
         int count = typeCount.getOrDefault(typeName, 0) + 1;
         typeCount.put(typeName, count);
-        node.name = typeName + "-" + count;
+        // nodeId 与 name 保持一致，使用"类型-序号"格式（如 source-1、keyby-1）。
+        // 确定性 nodeId 保证跨重启后 Checkpoint 状态能按 nodeId 正确恢复。
+        node.name   = typeName + "-" + count;
+        node.nodeId = node.name;
         nodes.add(node);
         index.put(node.nodeId, node);
     }

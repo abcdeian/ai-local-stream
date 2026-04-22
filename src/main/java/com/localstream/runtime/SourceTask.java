@@ -57,7 +57,7 @@ public class SourceTask implements Runnable {
                 for (DataQueue q : downstreamQueues) {
                     q.put(record);
                 }
-                metricsRegistry.increment(node.nodeId);
+                metricsRegistry.incrementOutput(node.nodeId);
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();

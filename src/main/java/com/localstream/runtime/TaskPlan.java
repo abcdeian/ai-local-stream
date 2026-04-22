@@ -88,7 +88,7 @@ public class TaskPlan {
                     }
                     default: {
                         // FLATMAP, KEYBY, UNION
-                        ProcessorTask task = new ProcessorTask(node, upQueues, downQueues);
+                        ProcessorTask task = new ProcessorTask(node, upQueues, downQueues, metricsRegistry);
                         processorTasks.add(task);
                         if (node.type == OperatorType.KEYBY) {
                             KeyByConfig cfg = (KeyByConfig) node.function;

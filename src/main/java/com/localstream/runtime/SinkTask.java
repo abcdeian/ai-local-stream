@@ -49,7 +49,7 @@ public class SinkTask implements Runnable {
                     }
                 } else {
                     sink.invoke(record);
-                    metricsRegistry.increment(node.nodeId);
+                    metricsRegistry.incrementInput(node.nodeId);
                 }
             }
         } catch (InterruptedException e) {

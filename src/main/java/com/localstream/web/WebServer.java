@@ -1,6 +1,7 @@
 package com.localstream.web;
 
 import com.localstream.checkpoint.CheckpointCoordinator;
+import com.localstream.common.JobGraph;
 import com.localstream.common.StreamConfig;
 import com.localstream.metrics.MetricsRegistry;
 import com.localstream.runtime.JobExecutor;
@@ -19,6 +20,7 @@ public class WebServer {
     private static final Logger log = Logger.getLogger(WebServer.class);
 
     private final StreamConfig config;
+    private final JobGraph jobGraph;
     private final JobExecutor jobExecutor;
     private final MetricsRegistry metricsRegistry;
     private final CheckpointCoordinator checkpointCoordinator;
@@ -26,10 +28,12 @@ public class WebServer {
     private boolean available = false;
 
     public WebServer(StreamConfig config,
+                     JobGraph jobGraph,
                      JobExecutor jobExecutor,
                      MetricsRegistry metricsRegistry,
                      CheckpointCoordinator checkpointCoordinator) {
         this.config = config;
+        this.jobGraph = jobGraph;
         this.jobExecutor = jobExecutor;
         this.metricsRegistry = metricsRegistry;
         this.checkpointCoordinator = checkpointCoordinator;
@@ -42,14 +46,15 @@ public class WebServer {
     public void start() {
         try {
             StatusHandler statusHandler = new StatusHandler(
-                    jobExecutor, metricsRegistry, checkpointCoordinator, config);
+                    jobGraph, jobExecutor, metricsRegistry, checkpointCoordinator, config);
 
             httpServer = HttpServer.create(
                     new InetSocketAddress(config.webConfig.port), 0);
-            httpServer.createContext("/", statusHandler);
+            httpServer.createContext("/",           statusHandler);
             httpServer.createContext("/api/status", statusHandler);
-            httpServer.createContext("/api/logs", statusHandler);
-            httpServer.setExecutor(null); // 使用默认线程池
+            httpServer.createContext("/api/dag",    statusHandler);
+            httpServer.createContext("/api/logs",   statusHandler);
+            httpServer.setExecutor(null);
             httpServer.start();
             available = true;
             log.info("Web server started at http://localhost:{}", config.webConfig.port);

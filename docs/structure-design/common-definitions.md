@@ -116,6 +116,27 @@ public class JobGraph {
 }
 ```
 
+### DagNodeView
+DAG 中单个节点的只读视图，用于 Web 端渲染拓扑图。由 web 子域从 `JobGraph` 中派生，不包含运行时状态。
+
+```java
+public class DagNodeView {
+    String nodeId;               // 节点唯一 ID
+    String name;                 // 节点名称（如 "source-1"、"map-2"、"keyby-1"）
+    OperatorType type;           // 节点类型（SOURCE / FLATMAP / KEYBY / UNION / SINK）
+    List<String> upstreamIds;    // 上游节点 ID 列表（SOURCE 节点为空列表）
+}
+```
+
+### DagSnapshot
+DAG 拓扑快照，供 `/api/dag` 接口返回，包含所有节点按拓扑顺序排列的视图。
+
+```java
+public class DagSnapshot {
+    List<DagNodeView> nodes;     // 所有节点，按拓扑排序（从 Source 到 Sink）
+}
+```
+
 ---
 
 ## Checkpoint 接口定义
@@ -181,25 +202,38 @@ public interface StateBackend {
 
 ## Metrics 定义
 
-### MetricEntry
-单条指标记录，描述某个节点的一个指标值。
+### RpsDataPoint
+单个 RPS 历史采样点，记录某一时刻的每秒处理速率。
 
 ```java
-public class MetricEntry {
-    String nodeId;       // 节点唯一 ID
-    String nodeName;     // 节点名称（便于展示）
-    String metricName;   // 指标名称，如 "read_count"、"write_count"
-    long metricValue;    // 指标值
+public class RpsDataPoint {
+    long timestampMs;    // 采样时的 Unix 毫秒时间戳
+    long rps;            // 该时刻的每秒处理条数（整数近似值）
+}
+```
+
+### NodeMetricsSummary
+单个节点的完整指标汇总，包含拓扑顺序、输入/输出总计数和 RPS 历史序列。覆盖 DAG 中所有节点（SOURCE / FLATMAP / KEYBY / UNION / SINK）。
+
+```java
+public class NodeMetricsSummary {
+    String nodeId;                    // 节点唯一 ID
+    String nodeName;                  // 节点名称（含类型语义，如 "source-1"、"map-1"）
+    OperatorType type;                // 节点类型
+    int topologyOrder;                // 拓扑顺序（0-based，从 Source 到 Sink 升序）
+    long inputCount;                  // 该节点累计接收的数据总条数（SOURCE 节点固定为 0）
+    long outputCount;                 // 该节点累计发出的数据总条数（SINK 节点固定为 0）
+    List<RpsDataPoint> rpsHistory;    // 最近 10 分钟的 RPS 采样序列（每 5 秒一个点，最多 120 条）
 }
 ```
 
 ### MetricsSnapshot
-一次指标查询的快照结果，包含所有节点的所有指标条目。
+一次指标查询的快照结果。
 
 ```java
 public class MetricsSnapshot {
-    /** 所有节点的指标条目列表 */
-    List<MetricEntry> entries;
+    /** 所有节点的汇总指标列表，按拓扑顺序排列（从 Source 到 Sink） */
+    List<NodeMetricsSummary> nodeMetrics;
     /** 快照采集时的 Unix 毫秒时间戳 */
     long snapshotTime;
 }

@@ -68,12 +68,10 @@ public class StreamEnv {
         new DagOptimizer().optimize(graph);
         log.info("DAG optimized: {} nodes after dead-node elimination", graph.nodes.size());
 
-        // 2. 创建 MetricsRegistry，注册 SOURCE/SINK 节点
+        // 2. 创建 MetricsRegistry，注册所有节点（按拓扑顺序）
         MetricsRegistry metricsRegistry = new MetricsRegistry();
         for (OperatorNode node : graph.nodes) {
-            if (node.type == OperatorType.SOURCE || node.type == OperatorType.SINK) {
-                metricsRegistry.register(node);
-            }
+            metricsRegistry.register(node);
         }
 
         // 3. 编译任务网络
@@ -111,7 +109,7 @@ public class StreamEnv {
         final CheckpointCoordinator finalCoordinator = coordinator;
         WebServer webServer = null;
         if (config.webConfig.enabled) {
-            webServer = new WebServer(config, executor, metricsRegistry, finalCoordinator);
+            webServer = new WebServer(config, graph, executor, metricsRegistry, finalCoordinator);
             webServer.start();
         }
 
@@ -119,18 +117,21 @@ public class StreamEnv {
         final CheckpointScheduler finalScheduler = scheduler;
         final WebServer finalWebServer = webServer;
         final JobExecutor finalExecutor = executor;
+        final MetricsRegistry finalMetrics = metricsRegistry;
         Runnable shutdown = () -> {
             finalExecutor.stop();
             if (finalScheduler != null) finalScheduler.stop();
             if (finalWebServer != null) finalWebServer.stop();
+            finalMetrics.stop();
         };
         executor.setShutdownHook(shutdown);
 
         // 7. 启动所有任务线程
         executor.startThreads();
 
-        // 8. 启动 Checkpoint 调度（线程就绪后再开始调度）
+        // 8. 启动 Checkpoint 调度 + MetricsRegistry 采样（线程就绪后再开始）
         if (scheduler != null) scheduler.start();
+        metricsRegistry.start();
 
         // 9. 阻塞直到所有任务线程结束
         log.info("Job [{}] running. Web dashboard: http://localhost:{}",
