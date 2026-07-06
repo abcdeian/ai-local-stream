@@ -1,6 +1,11 @@
 # local-stream
 这是一个用lsdd方法，通过AI生成的一个单机实时流计算引擎程序。
 
+## 项目说明
+1. docs：按照lsdd方法生成的项目文档
+1. skills：lsdd skill目录
+1. src：项目源码目录
+
 ## 项目提示词
 提示词1：生成整个程序
 ```text
